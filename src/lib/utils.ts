@@ -64,12 +64,12 @@ export function calculateOrderTotals(
 // --- Status ---
 
 const STATUS_STYLES: Record<OrderStatus, { bg: string; text: string }> = {
-  draft: { bg: "bg-gray-100 text-gray-700", text: "Draft" },
-  submitted: { bg: "bg-blue-100 text-blue-700", text: "Submitted" },
-  verified: { bg: "bg-yellow-100 text-yellow-700", text: "Verified" },
-  approved: { bg: "bg-green-100 text-green-700", text: "Approved" },
-  shipped: { bg: "bg-purple-100 text-purple-700", text: "Shipped" },
-  complete: { bg: "bg-emerald-100 text-emerald-700", text: "Complete" },
+  draft: { bg: "bg-gray-100 text-gray-700 border-gray-200", text: "Draft" },
+  submitted: { bg: "bg-blue-100 text-blue-700 border-blue-200", text: "Submitted" },
+  verified: { bg: "bg-yellow-100 text-yellow-700 border-yellow-200", text: "Verified" },
+  approved: { bg: "bg-green-100 text-green-700 border-green-200", text: "Approved" },
+  shipped: { bg: "bg-purple-100 text-purple-700 border-purple-200", text: "Shipped" },
+  complete: { bg: "bg-emerald-100 text-emerald-700 border-emerald-200", text: "Complete" },
 };
 
 export function getStatusStyle(status: OrderStatus) {
@@ -100,7 +100,19 @@ export function formatRelativeDate(isoString: string): string {
 
 // --- ID Generation ---
 
-let orderCounter = 150; // start after sample orders
+let orderCounter = 150; // default start; synced from localStorage on hydrate
+
+export function syncOrderCounter(orders: { id: string }[]): void {
+  let max = 149;
+  for (const o of orders) {
+    const match = o.id.match(/ORD-\d{4}-(\d+)/);
+    if (match) {
+      const num = parseInt(match[1], 10);
+      if (num > max) max = num;
+    }
+  }
+  orderCounter = max;
+}
 
 export function generateOrderId(): string {
   orderCounter++;

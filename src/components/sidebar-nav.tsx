@@ -16,8 +16,8 @@ const navItems = [
   { label: "Orders", href: ROUTES.dashboard, icon: ClipboardList },
   { label: "Products", href: ROUTES.products, icon: Package },
   { label: "Fee Schedules", href: ROUTES.feeSchedules, icon: DollarSign },
-  { label: "Documents", href: "#", icon: FileText, disabled: true, sprint: "Sprint 2" },
-  { label: "Approvals", href: "#", icon: ShieldCheck, disabled: true, sprint: "Sprint 3" },
+  { label: "Documents", href: "#", icon: FileText, disabled: true, sprint: "Sprint 2", reason: "Encounter forms — required for 100% of Medicare claims" },
+  { label: "Approvals", href: "#", icon: ShieldCheck, disabled: true, sprint: "Sprint 3", reason: "Prior auth workflow — automates payer approval routing" },
 ];
 
 export function SidebarNav() {
@@ -44,7 +44,7 @@ export function SidebarNav() {
               <div
                 key={item.label}
                 className="group relative flex items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground/50 cursor-not-allowed"
-                title={item.sprint}
+                title={`${item.sprint}: ${"reason" in item ? item.reason : ""}`}
               >
                 <item.icon className="h-4 w-4" />
                 <span>{item.label}</span>
@@ -73,10 +73,16 @@ export function SidebarNav() {
         })}
       </nav>
 
-      <div className="px-5 py-4 border-t border-border">
-        <p className="text-xs text-muted-foreground">
-          ClearOrder v0.1 — Sprint 1
-        </p>
+      <div className="px-4 py-3 border-t border-border">
+        <div className="flex items-center gap-3">
+          <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center text-sm font-semibold text-blue-700">
+            AK
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-medium truncate">Alex K.</p>
+            <p className="text-[10px] text-muted-foreground">Order Entry</p>
+          </div>
+        </div>
       </div>
     </aside>
   );

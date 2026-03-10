@@ -91,6 +91,13 @@ export default function FeeSchedulesPage() {
                   </TableCell>
                 </TableRow>
               ))}
+              {filtered.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
+                    No fee schedule entries found{selectedPayer !== "all" ? ` for ${getPayerName(selectedPayer)}` : ""}.
+                  </TableCell>
+                </TableRow>
+              )}
             </TableBody>
           </Table>
           <div className="mt-4 text-xs text-muted-foreground">

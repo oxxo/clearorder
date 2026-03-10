@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
@@ -12,6 +12,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  DialogClose,
+} from "@/components/ui/dialog";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -20,9 +29,11 @@ import {
 } from "@/components/ui/select";
 import { PageHeader } from "@/components/page-header";
 import { ProductCombobox } from "@/components/product-combobox";
+import { SmartPasteBanner } from "@/components/smart-paste-banner";
+import { ClaimRiskBadge } from "@/components/claim-risk-badge";
 import { useOrders } from "@/lib/orders-context";
 import { PAYERS } from "@/lib/data";
-import type { LineItem, Modifier, Product, Order } from "@/lib/types";
+import type { LineItem, Modifier, Product, Order, ParsedReferral, ClaimRisk } from "@/lib/types";
 import {
   lookupPrice,
   calculateOrderTotals,
@@ -71,10 +82,141 @@ export default function NewOrderPage() {
   // Notes
   const [notes, setNotes] = useState("");
 
+  // Confirm dialog
+  const [showConfirm, setShowConfirm] = useState(false);
+
   // Validation
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  // AI Confidence tracking (field name -> confidence 0-1)
+  const [fieldConfidence, setFieldConfidence] = useState<Record<string, number>>({});
+
+  // Claim Risk tracking (lineItem id -> risk)
+  const [claimRisks, setClaimRisks] = useState<Record<string, ClaimRisk>>({});
+
+  const handleSmartPaste = useCallback((data: ParsedReferral) => {
+    const confidence: Record<string, number> = {};
+
+    if (data.patientFirstName.value) {
+      setFirstName(data.patientFirstName.value);
+      confidence.firstName = data.patientFirstName.confidence;
+    }
+    if (data.patientLastName.value) {
+      setLastName(data.patientLastName.value);
+      confidence.lastName = data.patientLastName.confidence;
+    }
+    if (data.patientDob.value) {
+      setDob(data.patientDob.value);
+      confidence.dob = data.patientDob.confidence;
+    }
+    if (data.patientPhone.value) {
+      setPhone(data.patientPhone.value);
+      confidence.phone = data.patientPhone.confidence;
+    }
+    if (data.patientAddress.value) {
+      setAddress(data.patientAddress.value);
+      confidence.address = data.patientAddress.confidence;
+    }
+    if (data.diagnosisCode.value) {
+      setDiagnosisCode(data.diagnosisCode.value);
+      confidence.diagnosisCode = data.diagnosisCode.confidence;
+    }
+    if (data.diagnosisDescription.value) {
+      setDiagnosisDesc(data.diagnosisDescription.value);
+      confidence.diagnosisDesc = data.diagnosisDescription.confidence;
+    }
+    if (data.providerName.value) {
+      setProviderName(data.providerName.value);
+      confidence.providerName = data.providerName.confidence;
+    }
+    if (data.providerNpi.value) {
+      setProviderNpi(data.providerNpi.value);
+      confidence.providerNpi = data.providerNpi.confidence;
+    }
+    if (data.clinicName.value) {
+      setClinicName(data.clinicName.value);
+      confidence.clinicName = data.clinicName.confidence;
+    }
+
+    // Match payer by name (fuzzy — handles "Medicare Part B" → "Medicare")
+    if (data.payerName.value) {
+      const val = data.payerName.value.toLowerCase();
+      const matched = PAYERS.find(
+        (p) => {
+          const name = p.name.toLowerCase();
+          return name === val || name.includes(val) || val.includes(name);
+        }
+      );
+      if (matched) {
+        setPayerId(matched.id);
+        confidence.payerId = data.payerName.confidence;
+      }
+    }
+
+    setFieldConfidence(confidence);
+    setErrors({});
+    toast.success("AI extracted fields from referral", {
+      description: "Review highlighted fields before submitting.",
+    });
+  }, []);
+
   const payer = PAYERS.find((p) => p.id === payerId);
+
+  // Check claim risks when line items or payer changes (debounced 500ms)
+  useEffect(() => {
+    if (lineItems.length === 0 || !payerId) {
+      setClaimRisks({});
+      return;
+    }
+
+    const itemsWithProducts = lineItems.filter((li) => li.productId);
+    if (itemsWithProducts.length === 0) return;
+
+    const controller = new AbortController();
+
+    const timeout = setTimeout(() => {
+      fetch("/api/check-claim-risk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          lineItems: itemsWithProducts.map((li) => ({
+            id: li.id,
+            hcpcsCode: li.hcpcsCode,
+            productName: li.productName,
+            quantity: li.quantity,
+            modifier: li.modifier,
+          })),
+          payerName: payer?.name ?? "",
+          payerType: payer?.type ?? "",
+          diagnosisCode,
+        }),
+        signal: controller.signal,
+      })
+        .then((r) => { if (!r.ok) throw new Error(); return r.json(); })
+        .then((data) => {
+          const map: Record<string, ClaimRisk> = {};
+          for (const risk of data.risks ?? []) {
+            map[risk.lineItemId] = {
+              level: risk.level,
+              reason: risk.reason,
+              suggestion: risk.suggestion,
+            };
+          }
+          setClaimRisks(map);
+        })
+        .catch(() => {});
+    }, 500);
+
+    return () => { clearTimeout(timeout); controller.abort(); };
+  }, [lineItems, payerId, diagnosisCode, payer?.name, payer?.type]);
+
+  function confidenceBorder(field: string): string {
+    const c = fieldConfidence[field];
+    if (c === undefined) return "";
+    if (c >= 0.9) return "border-l-4 border-l-emerald-500";
+    if (c >= 0.5) return "border-l-4 border-l-amber-500";
+    return "border-l-4 border-l-red-500";
+  }
 
   const recalculateLineItem = useCallback(
     (item: FormLineItem, newPayerId: string): FormLineItem => {
@@ -237,10 +379,10 @@ export default function NewOrderPage() {
     toast.success(`Order ${order.id} ${asDraft ? "saved as draft" : "created"}`, {
       action: {
         label: "View",
-        onClick: () => router.push(ROUTES.orderDetail(order.id)),
+        onClick: () => router.push(`${ROUTES.orderDetail(order.id)}?created=true`),
       },
     });
-    router.push(ROUTES.dashboard);
+    router.push(`${ROUTES.orderDetail(order.id)}?created=true`);
   };
 
   return (
@@ -253,6 +395,8 @@ export default function NewOrderPage() {
         ]}
       />
 
+      <SmartPasteBanner onParsed={handleSmartPaste} />
+
       <div className="flex gap-8">
         {/* Left Column — Form */}
         <div className="flex-1 space-y-6 min-w-0">
@@ -264,28 +408,30 @@ export default function NewOrderPage() {
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="text-sm font-medium mb-1.5 block">
+                  <label htmlFor="patient-first-name" className="text-sm font-medium mb-1.5 block">
                     First Name <span className="text-destructive">*</span>
                   </label>
                   <Input
+                    id="patient-first-name"
                     value={firstName}
-                    onChange={(e) => setFirstName(e.target.value)}
+                    onChange={(e) => { setFirstName(e.target.value); setFieldConfidence((p) => { const n = { ...p }; delete n.firstName; return n; }); }}
                     placeholder="Maria"
-                    className={errors.firstName ? "border-destructive" : ""}
+                    className={`${errors.firstName ? "border-destructive" : ""} ${confidenceBorder("firstName")}`}
                   />
                   {errors.firstName && (
                     <p className="text-xs text-destructive mt-1">{errors.firstName}</p>
                   )}
                 </div>
                 <div>
-                  <label className="text-sm font-medium mb-1.5 block">
+                  <label htmlFor="patient-last-name" className="text-sm font-medium mb-1.5 block">
                     Last Name <span className="text-destructive">*</span>
                   </label>
                   <Input
+                    id="patient-last-name"
                     value={lastName}
-                    onChange={(e) => setLastName(e.target.value)}
+                    onChange={(e) => { setLastName(e.target.value); setFieldConfidence((p) => { const n = { ...p }; delete n.lastName; return n; }); }}
                     placeholder="Rodriguez"
-                    className={errors.lastName ? "border-destructive" : ""}
+                    className={`${errors.lastName ? "border-destructive" : ""} ${confidenceBorder("lastName")}`}
                   />
                   {errors.lastName && (
                     <p className="text-xs text-destructive mt-1">{errors.lastName}</p>
@@ -294,41 +440,49 @@ export default function NewOrderPage() {
               </div>
               <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <label className="text-sm font-medium mb-1.5 block">Date of Birth</label>
-                  <Input type="date" value={dob} onChange={(e) => setDob(e.target.value)} />
+                  <label htmlFor="patient-dob" className="text-sm font-medium mb-1.5 block">Date of Birth</label>
+                  <Input id="patient-dob" type="date" value={dob} onChange={(e) => { setDob(e.target.value); setFieldConfidence((p) => { const n = { ...p }; delete n.dob; return n; }); }} className={confidenceBorder("dob")} />
                 </div>
                 <div>
-                  <label className="text-sm font-medium mb-1.5 block">Phone</label>
+                  <label htmlFor="patient-phone" className="text-sm font-medium mb-1.5 block">Phone</label>
                   <Input
+                    id="patient-phone"
                     value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
+                    onChange={(e) => { setPhone(e.target.value); setFieldConfidence((p) => { const n = { ...p }; delete n.phone; return n; }); }}
                     placeholder="(555) 234-5678"
+                    className={confidenceBorder("phone")}
                   />
                 </div>
                 <div>
-                  <label className="text-sm font-medium mb-1.5 block">Address</label>
+                  <label htmlFor="patient-address" className="text-sm font-medium mb-1.5 block">Address</label>
                   <Input
+                    id="patient-address"
                     value={address}
-                    onChange={(e) => setAddress(e.target.value)}
+                    onChange={(e) => { setAddress(e.target.value); setFieldConfidence((p) => { const n = { ...p }; delete n.address; return n; }); }}
                     placeholder="1234 Oak Ave, Sacramento, CA"
+                    className={confidenceBorder("address")}
                   />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="text-sm font-medium mb-1.5 block">Diagnosis Code (ICD-10)</label>
+                  <label htmlFor="diagnosis-code" className="text-sm font-medium mb-1.5 block">Diagnosis Code (ICD-10)</label>
                   <Input
+                    id="diagnosis-code"
                     value={diagnosisCode}
-                    onChange={(e) => setDiagnosisCode(e.target.value)}
+                    onChange={(e) => { setDiagnosisCode(e.target.value); setFieldConfidence((p) => { const n = { ...p }; delete n.diagnosisCode; return n; }); }}
                     placeholder="I97.2"
+                    className={confidenceBorder("diagnosisCode")}
                   />
                 </div>
                 <div>
-                  <label className="text-sm font-medium mb-1.5 block">Diagnosis Description</label>
+                  <label htmlFor="diagnosis-desc" className="text-sm font-medium mb-1.5 block">Diagnosis Description</label>
                   <Input
+                    id="diagnosis-desc"
                     value={diagnosisDesc}
-                    onChange={(e) => setDiagnosisDesc(e.target.value)}
+                    onChange={(e) => { setDiagnosisDesc(e.target.value); setFieldConfidence((p) => { const n = { ...p }; delete n.diagnosisDesc; return n; }); }}
                     placeholder="Postmastectomy lymphedema syndrome"
+                    className={confidenceBorder("diagnosisDesc")}
                   />
                 </div>
               </div>
@@ -343,40 +497,44 @@ export default function NewOrderPage() {
             <CardContent className="space-y-4">
               <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <label className="text-sm font-medium mb-1.5 block">
+                  <label htmlFor="provider-name" className="text-sm font-medium mb-1.5 block">
                     Provider Name <span className="text-destructive">*</span>
                   </label>
                   <Input
+                    id="provider-name"
                     value={providerName}
-                    onChange={(e) => setProviderName(e.target.value)}
+                    onChange={(e) => { setProviderName(e.target.value); setFieldConfidence((p) => { const n = { ...p }; delete n.providerName; return n; }); }}
                     placeholder="Dr. Sarah Chen"
-                    className={errors.providerName ? "border-destructive" : ""}
+                    className={`${errors.providerName ? "border-destructive" : ""} ${confidenceBorder("providerName")}`}
                   />
                   {errors.providerName && (
                     <p className="text-xs text-destructive mt-1">{errors.providerName}</p>
                   )}
                 </div>
                 <div>
-                  <label className="text-sm font-medium mb-1.5 block">
+                  <label htmlFor="provider-npi" className="text-sm font-medium mb-1.5 block">
                     NPI <span className="text-destructive">*</span>
                   </label>
                   <Input
+                    id="provider-npi"
                     value={providerNpi}
-                    onChange={(e) => setProviderNpi(e.target.value)}
+                    onChange={(e) => { setProviderNpi(e.target.value); setFieldConfidence((p) => { const n = { ...p }; delete n.providerNpi; return n; }); }}
                     placeholder="1234567890"
                     maxLength={10}
-                    className={errors.providerNpi ? "border-destructive" : ""}
+                    className={`${errors.providerNpi ? "border-destructive" : ""} ${confidenceBorder("providerNpi")}`}
                   />
                   {errors.providerNpi && (
                     <p className="text-xs text-destructive mt-1">{errors.providerNpi}</p>
                   )}
                 </div>
                 <div>
-                  <label className="text-sm font-medium mb-1.5 block">Clinic</label>
+                  <label htmlFor="clinic-name" className="text-sm font-medium mb-1.5 block">Clinic</label>
                   <Input
+                    id="clinic-name"
                     value={clinicName}
-                    onChange={(e) => setClinicName(e.target.value)}
+                    onChange={(e) => { setClinicName(e.target.value); setFieldConfidence((p) => { const n = { ...p }; delete n.clinicName; return n; }); }}
                     placeholder="Pacific Lymphedema Clinic"
+                    className={confidenceBorder("clinicName")}
                   />
                 </div>
               </div>
@@ -605,8 +763,13 @@ export default function NewOrderPage() {
                             >
                               {item.pricingConfidence === "exact"
                                 ? "Exact"
-                                : "Fallback"}
+                                : payerId === "PAY006"
+                                  ? "MSRP"
+                                  : "Fallback"}
                             </Badge>
+                            {claimRisks[item.id] && (
+                              <ClaimRiskBadge risk={claimRisks[item.id]} />
+                            )}
                           </motion.div>
                         </motion.div>
                       )}
@@ -648,12 +811,45 @@ export default function NewOrderPage() {
           </Card>
 
           {/* Actions — sticky bottom */}
-          <div className="sticky bottom-0 bg-background/95 backdrop-blur border-t border-border -mx-8 px-8 py-4 flex items-center justify-end gap-3">
+          <div className="sticky bottom-0 bg-background/95 backdrop-blur border-t border-border -mx-8 px-8 py-4 flex items-center justify-end gap-3 shadow-[0_-1px_3px_0_rgba(0,0,0,0.05)]">
             <Button variant="outline" onClick={() => handleSubmit(true)}>
               Save Draft
             </Button>
-            <Button onClick={() => handleSubmit(false)}>Create Order</Button>
+            <Button onClick={() => {
+              if (!validate()) {
+                toast.error("Please fix the errors before submitting");
+                return;
+              }
+              setShowConfirm(true);
+            }}>Create Order</Button>
           </div>
+
+          {/* Confirmation Dialog */}
+          <Dialog open={showConfirm} onOpenChange={setShowConfirm}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Submit Order</DialogTitle>
+                <DialogDescription>
+                  This will create a new order for{" "}
+                  <strong>{firstName} {lastName}</strong> with{" "}
+                  {lineItems.filter((li) => li.productId).length} item(s) totaling{" "}
+                  <strong>{formatCurrency(totals.totalAllowedAmount)}</strong>.
+                  The order will be submitted to <strong>{payer?.name || "Self-Pay"}</strong>.
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <DialogClose>
+                  <Button variant="outline">Cancel</Button>
+                </DialogClose>
+                <Button onClick={() => {
+                  setShowConfirm(false);
+                  handleSubmit(false);
+                }}>
+                  Confirm & Submit
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
 
         {/* Right Column — Sticky Order Summary */}

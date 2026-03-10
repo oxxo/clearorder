@@ -92,3 +92,33 @@ export interface Vendor {
   name: string;
   website: string;
 }
+
+// --- AI Features ---
+
+export interface ConfidenceField<T = string> {
+  value: T;
+  confidence: number; // 0-1
+}
+
+export interface ParsedReferral {
+  patientFirstName: ConfidenceField;
+  patientLastName: ConfidenceField;
+  patientDob: ConfidenceField;
+  patientPhone: ConfidenceField;
+  patientAddress: ConfidenceField;
+  diagnosisCode: ConfidenceField;
+  diagnosisDescription: ConfidenceField;
+  providerName: ConfidenceField;
+  providerNpi: ConfidenceField;
+  clinicName: ConfidenceField;
+  payerName: ConfidenceField;
+  products: ConfidenceField<string[]>;
+}
+
+export type RiskLevel = 'low' | 'medium' | 'high';
+
+export interface ClaimRisk {
+  level: RiskLevel;
+  reason: string;
+  suggestion: string;
+}
