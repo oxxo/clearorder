@@ -108,7 +108,7 @@ Each sprint's data feeds the next. Sprint 1 collects the training data Sprint 3 
 |-------|------|-------------|
 | **Discovery** | Claude | Decomposed the SPEC into data model, state transitions, and pricing rules. Identified cascade pricing as deterministic (not AI) — saved API cost and eliminated hallucination risk on dollar amounts. |
 | **Architecture** | Claude | Designed the order form state machine, fee schedule lookup cascade, and fallback-first AI strategy. Defined Zod schemas for structured AI output (Smart Paste, Claim Risk). |
-| **Implementation** | Cursor + Claude | Generated seed data (10 products, 6 payers, 50 fee schedule entries with real HCPCS codes). Built components iteratively — AI wrote first draft, I reviewed for healthcare-specific edge cases. |
+| **Implementation** | VS Code + Claude Code | Generated seed data (10 products, 6 payers, 50 fee schedule entries with real HCPCS codes). Built components iteratively — AI wrote first draft, I reviewed for healthcare-specific edge cases. |
 | **AI Features** | Vercel AI SDK + OpenAI | `generateObject` for Smart Paste (structured extraction) and Claim Risk (risk classification). `streamText` for Revenue Intelligence (real-time streaming). All with hardcoded fallbacks. |
 | **Polish** | Claude | Ran a 4-agent expert panel (QA, UX, Dev, TPM) against the codebase. Panel found debounce bug, payer matching gap, and accessibility issues — all fixed before ship. |
 
