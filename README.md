@@ -2,7 +2,17 @@
 
 **Medical supply order management that replaces Excel with automated pricing, AI-assisted data entry, and claim risk visibility.**
 
-Live: [clearorder.vercel.app](https://clearorder.vercel.app) (Vercel)
+---
+
+## Deliverables
+
+| Deliverable | Link |
+|-------------|------|
+| **Live prototype** | [clearorder.vercel.app](https://clearorder.vercel.app) |
+| **Video walkthrough (10 min)** | [YouTube](https://youtu.be/S55G4W9FIjQ) |
+| **Sprint planning** | [Asana Board](https://app.asana.com/1/1210060819669786/project/1213605631567977/board/1213605631653450) |
+| **Product roadmap** | [FigJam — AI Compound Interest Roadmap](https://www.figma.com/board/4HYxzrnYPzlGQ92anK9Fsc/ClearOrder---AI-Compound-Interest-Roadmap--Corrected-) |
+| **Order creation flow** | [FigJam — Order Creation Flow](https://www.figma.com/board/qyA9Erlz66PXHxI8adb841/ClearOrder---Order-Creation-Flow--Corrected-) |
 
 ---
 
@@ -222,4 +232,4 @@ The fallback-first design is intentionally a compliance asset: the system works 
 
 ---
 
-*Sprint 1 of 4 · Built with Next.js + Vercel AI SDK · Currency: USD cents · [SPEC.md](../SPEC.md) for full data model*
+*Sprint 1 of 4 · Built with Next.js + Vercel AI SDK · Currency: USD cents*
